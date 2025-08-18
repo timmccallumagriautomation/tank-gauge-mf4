@@ -4,7 +4,7 @@ Monitor tank level via on-board CANedge2 and sensors.
 
 # Dashboard
 
-![Uploading Screenshot from 2025-08-18 15-05-35.png…]()
+<img width="1341" height="963" alt="Screenshot from 2025-08-18 15-05-35" src="https://github.com/user-attachments/assets/7121a718-7426-4648-9a4e-7bb4ad8eecaf" />
 
 # Roadmap
 
