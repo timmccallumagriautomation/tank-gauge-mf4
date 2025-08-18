@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Tank Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <script src="https://www.gstatic.com/charts/loader.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root{--bg:#0b1220;--card:#131a2a;--border:#1c2540;--text:#ffffff;}
+    body{background:var(--bg);color:var(--text);}
+    .card{background:var(--card);border:1px solid var(--border);}
+    .value-lg{--text:#ffffff;font-size:clamp(28px,6vw,64px);font-weight:500;}
+    #map{width:100%;height:360px;border-radius:.5rem;}
+    .btn-stop{background:#ee3e3e;border:none;}
+    .btn-stop:hover{background:#d93636;}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;}
+    table td,table th{vertical-align:middle;}
+    .leaflet-container{background:#0f1628;}
+    .panel-center{display:flex;align-items:center;justify-content:center;min-height:360px;text-align:center;}
+    .stat{font-weight:600;font-size:1.05rem;}
+    .stat span{font-family:ui-monospace,Menlo,monospace;}
+    .table{color:#fff;}
+    .table thead th{color:#fff!important;}
+    .table-striped>tbody>tr:nth-of-type(odd){background-color:rgba(255,255,255,0.04);}
+    .table-striped>tbody>tr:nth-of-type(even){background-color:rgba(255,255,255,0.02);}
+    a,a:hover{color:#fff;}
+    .text-soft{color:#fff!important;}
+    .leaflet-control-attribution,.leaflet-control-scale-line{color:#fff;background:rgba(0,0,0,0.2);border:none;}
+
+    /* Additions and overrides to force all text to white */
+    .text-bg-primary {
+      color: #fff !important; /* Forces the badge text to white */
+      background-color: var(--bs-primary) !important;
+    }
+    .text-success {
+        color: #fff !important; /* Overrides the default green for the "Stop signal sent" message */
+    }
+    .text-danger {
+        color: #fff !important; /* Overrides the default red for the "Stop failed" message */
+    }
+    .table thead th {
+        color: #fff !important;
+    }
+    .leaflet-control-attribution {
+        color: #fff !important; /* Forces leaflet attribution text to white */
+    }
+    /* This rule specifically targets the SVG text elements within the gauge and forces their color to white */
+    #gauge svg text {
+        fill: #ffffff !important;
+    }
+  </style>
+</head>
+<body>
+<div class="container py-4">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h1 class="h4 m-0">Tank Gauge</h1>
+    <span class="badge text-bg-primary">Live</span>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="card p-3 h-100">
+        <div id="gauge" style="width:100%; height:360px;"></div>
+        <div class="d-flex justify-content-between">
+          <div>
+            <div class="value-lg" id="litres">— L</div>
+            <div class="text-soft">Last update: <span id="ts">—</span></div>
+          </div>
+          <div class="text-end">
+            <div class="text-soft">Scale</div>
+            <div class="h6 mb-0">0–600 L</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card p-3 h-100">
+        <div id="map"></div>
+        <div class="d-flex justify-content-between align-items-center mt-2">
+          <div class="stat">
+            Lat: <span id="lat">—</span>
+            &nbsp;&nbsp;|&nbsp;&nbsp;
+            Lng: <span id="lng">—</span>
+          </div>
+          <div class="stat">Breadcrumbs: <span id="crumbCount">0</span></div>
+        </div>
+        <div class="small text-soft mt-1">Map © OpenStreetMap contributors</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mt-1">
+    <div class="col-lg-6">
+      <div class="card p-3 h-100 panel-center">
+        <div>
+          <button id="stopBtn" class="btn btn-stop btn-lg px-4 py-3">⛔ Stop Burro</button>
+          <div id="stopMsg" class="mt-3 small text-soft">Configure a STOP endpoint to enable.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card p-3 h-100">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h2 class="h6 mb-0">Recent data</h2>
+          <button id="downloadBtn" class="btn btn-outline-light btn-sm">Download latest.json</button>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-striped table-borderless mb-0">
+            <thead>
+              <tr class="text-uppercase small">
+                <th style="width:38%">Timestamp</th>
+                <th>Litres</th>
+                <th>Lat</th>
+                <th>Lng</th>
+              </tr>
+            </thead>
+            <tbody id="recentBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const CONFIG={dataUrl:"latest.json",pollMs:5000,defaultCenter:{lat:-35.128916,lng:139.129189},breadcrumbLimit:30,STOP_ENDPOINT:"",fallbackLitres:250};
+
+google.charts.load("current",{packages:["gauge"]});
+let gaugeChart,gaugeData,gaugeOpts;
+google.charts.setOnLoadCallback(()=>{
+  gaugeData=google.visualization.arrayToDataTable([["Label","Value"],["Litres",CONFIG.fallbackLitres]]);
+  gaugeOpts={min:0,max:600,minorTicks:5,redFrom:0,redTo:60,yellowFrom:60,yellowTo:150,greenFrom:150,greenTo:600,animation:{duration:400}};
+  gaugeChart=new google.visualization.Gauge(document.getElementById("gauge"));
+  drawGauge(CONFIG.fallbackLitres);
+  startPolling();
+});
+function drawGauge(v){
+  const val=Math.max(0,Math.min(600,Number(v)||0));
+  gaugeData.setValue(0,1,val);
+  gaugeChart.draw(gaugeData,gaugeOpts);
+  document.getElementById("litres").textContent=val.toFixed(0)+" L";
+}
+
+let map,curMarker,crumbPolyline;
+let breadcrumbs=[];
+function initLeaflet(){
+  map=L.map("map",{worldCopyJump:true}).setView([CONFIG.defaultCenter.lat,CONFIG.defaultCenter.lng],14);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:20,attribution:"&copy; OpenStreetMap contributors"}).addTo(map);
+  crumbPolyline=L.polyline([],{weight:3,opacity:0.95}).addTo(map);
+  document.getElementById("lat").textContent=CONFIG.defaultCenter.lat.toFixed(6);
+  document.getElementById("lng").textContent=CONFIG.defaultCenter.lng.toFixed(6);
+}
+function updateMap(lat,lng){
+  if(!map||lat==null||lng==null)return;
+  const pos=[Number(lat),Number(lng)];
+  if(!curMarker){curMarker=L.marker(pos,{title:"Current position"}).addTo(map);}
+  else{curMarker.setLatLng(pos);}
+  const path=breadcrumbs.filter(p=>p.lat!=null&&p.lng!=null).map(p=>[p.lat,p.lng]);
+  crumbPolyline.setLatLngs(path);
+  document.getElementById("crumbCount").textContent=String(path.length);
+  document.getElementById("lat").textContent=pos[0].toFixed(6);
+  document.getElementById("lng").textContent=pos[1].toFixed(6);
+}
+
+function startPolling(){pollOnce();setInterval(pollOnce,CONFIG.pollMs);}
+async function pollOnce(){
+  try{
+    const res=await fetch(CONFIG.dataUrl,{cache:"no-store"});
+    if(!res.ok)throw new Error("latest.json not available yet");
+    const j=await res.json();
+    const litres=Number(j.litres??CONFIG.fallbackLitres);
+    const timestamp=j.timestamp||new Date().toISOString();
+    const lat=(typeof j.lat==="number")?j.lat:null;
+    const lng=(typeof j.lng==="number")?j.lng:null;
+    drawGauge(litres);
+    document.getElementById("ts").textContent=new Date(timestamp).toLocaleString()||timestamp;
+    breadcrumbs.push({litres,timestamp,lat,lng});
+    if(breadcrumbs.length>CONFIG.breadcrumbLimit)breadcrumbs.shift();
+    updateMap(lat,lng);
+    renderRecentTable();
+  }catch(e){
+    drawGauge(CONFIG.fallbackLitres);
+  }
+}
+
+function renderRecentTable(){
+  const tbody=document.getElementById("recentBody");
+  tbody.innerHTML="";
+  const rows=[...breadcrumbs].slice(-10).reverse();
+  for(const r of rows){
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td class="mono">${new Date(r.timestamp).toLocaleString()}</td><td>${isFinite(r.litres)?r.litres.toFixed(1):"—"}</td><td>${(r.lat!=null)?r.lat.toFixed(6):"—"}</td><td>${(r.lng!=null)?r.lng.toFixed(6):"—"}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+document.addEventListener("DOMContentLoaded",()=>{
+  initLeaflet();
+  document.getElementById("downloadBtn").addEventListener("click",downloadLatest);
+  document.getElementById("stopBtn").addEventListener("click",stopBurro);
+});
+async function stopBurro(){
+  const out=document.getElementById("stopMsg");
+  if(!CONFIG.STOP_ENDPOINT){out.innerHTML=`<span>No STOP endpoint configured yet.</span>`;return;}
+  try{
+    const r=await fetch(CONFIG.STOP_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:"user_stop"})});
+    if(!r.ok)throw new Error(await r.text());
+    out.innerHTML=`<span class="text-success">Stop signal sent.</span>`;
+  }catch(e){
+    out.innerHTML=`<span class="text-danger">Stop failed: ${e.message||e}</span>`;
+  }
+}
+async function downloadLatest(){
+  try{
+    const res=await fetch(CONFIG.dataUrl,{cache:"no-store"});
+    if(!res.ok)throw new Error("latest.json not found");
+    const blob=await res.blob();
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download="latest.json";
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  }catch(e){
+    alert(e.message||"Download failed");
+  }
+}
+</script>
+</body>
+</html>
