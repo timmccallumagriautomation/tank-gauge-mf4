@@ -1,0 +1,79 @@
+name: Decode newest MF4 from S3 -> latest.json
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 minutes
+  workflow_dispatch: {}
+
+jobs:
+  decode:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # to commit latest.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Find newest MF4 key in S3
+        id: find
+        env:
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          S3_PREFIX: ${{ secrets.S3_PREFIX }}
+        run: |
+          NEWEST=$(aws s3 ls s3://$S3_BUCKET/$S3_PREFIX --recursive \
+            | awk '/\.mf4$|\.MF4$/{print $1" "$2" "$4}' \
+            | sort | tail -n1 | awk '{print $3}')
+          if [ -z "$NEWEST" ]; then
+            echo "No MF4 yet"; echo "mf4_key=" >> $GITHUB_OUTPUT; exit 0
+          fi
+          echo "Newest MF4: $NEWEST"
+          echo "mf4_key=$NEWEST" >> $GITHUB_OUTPUT
+
+      - name: Download MF4 + DBC
+        if: steps.find.outputs.mf4_key != ''
+        env:
+          S3_BUCKET:   ${{ secrets.S3_BUCKET }}
+          MF4_KEY:     ${{ steps.find.outputs.mf4_key }}
+          S3_DBC_KEY:  ${{ secrets.S3_DBC_KEY }}
+        run: |
+          aws s3 cp "s3://$S3_BUCKET/$MF4_KEY" input.mf4
+          aws s3 cp "s3://$S3_BUCKET/$S3_DBC_KEY" input.dbc
+          ls -l
+
+      - name: Set up Python
+        if: steps.find.outputs.mf4_key != ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install decode deps
+        if: steps.find.outputs.mf4_key != ''
+        run: |
+          python -m pip install --upgrade pip
+          pip install asammdf pandas canmatrix
+
+      - name: Decode MF4 -> latest.json
+        if: steps.find.outputs.mf4_key != ''
+        env:
+          SIGNAL_NAME: ${{ secrets.SIGNAL_NAME }}
+          MAX_LITRES:  ${{ secrets.MAX_LITRES }}
+          MF4_PATH:    input.mf4
+          DBC_PATH:    input.dbc
+          CAN_CHANNEL: "0"
+        run: |
+          python scripts/extract_latest_litres.py
+          cat latest.json
+
+      - name: Commit latest.json (if changed)
+        run: |
+          git config user.name  "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add latest.json || true
+          git commit -m "Update latest.json" || echo "No changes"
+          git push
