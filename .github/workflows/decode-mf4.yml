@@ -1,111 +1,111 @@
-name: Decode newest MF4 from S3 -> latest.json
+# name: Decode newest MF4 from S3 -> latest.json
 
-on:
-  schedule:
-    - cron: "*/5 * * * *"   # every 5 minutes
-  workflow_dispatch: {}
+# on:
+#   schedule:
+#     - cron: "*/5 * * * *"   # every 5 minutes
+#   workflow_dispatch: {}
 
-jobs:
-  decode:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write   # to commit latest.json
-    steps:
-      - uses: actions/checkout@v4
+# jobs:
+#   decode:
+#     runs-on: ubuntu-latest
+#     permissions:
+#       contents: write   # to commit latest.json
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ secrets.AWS_REGION }}
+#       - name: Configure AWS
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region:            ${{ secrets.AWS_REGION }}
 
-      - name: Find newest MF4 key in S3
-        id: find
-        env:
-          S3_BUCKET: ${{ secrets.S3_BUCKET }}
-          S3_PREFIX: ${{ secrets.S3_PREFIX }}
-        run: |
-          NEWEST=$(aws s3 ls s3://$S3_BUCKET/$S3_PREFIX --recursive \
-            | awk '/\.mf4$|\.MF4$/{print $1" "$2" "$4}' \
-            | sort | tail -n1 | awk '{print $3}')
-          if [ -z "$NEWEST" ]; then
-            echo "No MF4 yet"; echo "mf4_key=" >> $GITHUB_OUTPUT; exit 0
-          fi
-          echo "Newest MF4: $NEWEST"
-          echo "mf4_key=$NEWEST" >> $GITHUB_OUTPUT
+#       - name: Find newest MF4 key in S3
+#         id: find
+#         env:
+#           S3_BUCKET: ${{ secrets.S3_BUCKET }}
+#           S3_PREFIX: ${{ secrets.S3_PREFIX }}
+#         run: |
+#           NEWEST=$(aws s3 ls s3://$S3_BUCKET/$S3_PREFIX --recursive \
+#             | awk '/\.mf4$|\.MF4$/{print $1" "$2" "$4}' \
+#             | sort | tail -n1 | awk '{print $3}')
+#           if [ -z "$NEWEST" ]; then
+#             echo "No MF4 yet"; echo "mf4_key=" >> $GITHUB_OUTPUT; exit 0
+#           fi
+#           echo "Newest MF4: $NEWEST"
+#           echo "mf4_key=$NEWEST" >> $GITHUB_OUTPUT
 
-      - name: Download MF4 + DBC
-        if: steps.find.outputs.mf4_key != ''
-        env:
-          S3_BUCKET:   ${{ secrets.S3_BUCKET }}
-          MF4_KEY:     ${{ steps.find.outputs.mf4_key }}
-          S3_DBC_KEY:  ${{ secrets.S3_DBC_KEY }}
-        run: |
-          aws s3 cp "s3://$S3_BUCKET/$MF4_KEY" input.mf4
-          aws s3 cp "s3://$S3_BUCKET/$S3_DBC_KEY" input.dbc
-          ls -l
+#       - name: Download MF4 + DBC
+#         if: steps.find.outputs.mf4_key != ''
+#         env:
+#           S3_BUCKET:   ${{ secrets.S3_BUCKET }}
+#           MF4_KEY:     ${{ steps.find.outputs.mf4_key }}
+#           S3_DBC_KEY:  ${{ secrets.S3_DBC_KEY }}
+#         run: |
+#           aws s3 cp "s3://$S3_BUCKET/$MF4_KEY" input.mf4
+#           aws s3 cp "s3://$S3_BUCKET/$S3_DBC_KEY" input.dbc
+#           ls -l
 
-      - name: Set up Python
-        if: steps.find.outputs.mf4_key != ''
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+#       - name: Set up Python
+#         if: steps.find.outputs.mf4_key != ''
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.11'
 
-      - name: Install decode deps
-        if: steps.find.outputs.mf4_key != ''
-        run: |
-          python -m pip install --upgrade pip
-          pip install asammdf pandas canmatrix
+#       - name: Install decode deps
+#         if: steps.find.outputs.mf4_key != ''
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install asammdf pandas canmatrix
 
-      - name: Decode MF4 -> latest.json
-        if: steps.find.outputs.mf4_key != ''
-        env:
-          SIGNAL_NAME: ${{ secrets.SIGNAL_NAME }}
-          MAX_LITRES:  ${{ secrets.MAX_LITRES }}
-          MF4_PATH:    input.mf4
-          DBC_PATH:    input.dbc
-          CAN_CHANNEL: "0"
-        run: |
-          python scripts/extract_latest_litres.py
-          cat latest.json
+#       - name: Decode MF4 -> latest.json
+#         if: steps.find.outputs.mf4_key != ''
+#         env:
+#           SIGNAL_NAME: ${{ secrets.SIGNAL_NAME }}
+#           MAX_LITRES:  ${{ secrets.MAX_LITRES }}
+#           MF4_PATH:    input.mf4
+#           DBC_PATH:    input.dbc
+#           CAN_CHANNEL: "0"
+#         run: |
+#           python scripts/extract_latest_litres.py
+#           cat latest.json
 
-      - name: Commit latest.json (if changed)
-        run: |
-          git config user.name  "github-actions"
-          git config user.email "actions@users.noreply.github.com"
-          git add latest.json || true
-          git commit -m "Update latest.json" || echo "No changes"
-          git push
+#       - name: Commit latest.json (if changed)
+#         run: |
+#           git config user.name  "github-actions"
+#           git config user.email "actions@users.noreply.github.com"
+#           git add latest.json || true
+#           git commit -m "Update latest.json" || echo "No changes"
+#           git push
 
-                - name: Maybe alert on low tank
-        if: steps.find.outputs.mf4_key != ''
-        env:
-          THRESHOLD_L: "60"   # set as you like
-          TWILIO_ACCOUNT_SID:   ${{ secrets.TWILIO_ACCOUNT_SID }}
-          TWILIO_AUTH_TOKEN:    ${{ secrets.TWILIO_AUTH_TOKEN }}
-          TWILIO_SMS_FROM:      ${{ secrets.TWILIO_SMS_FROM }}
-          ALERT_TO_SMS:         ${{ secrets.ALERT_TO_SMS }}
-          TWILIO_WHATSAPP_FROM: ${{ secrets.TWILIO_WHATSAPP_FROM }}
-          ALERT_TO_WHATSAPP:    ${{ secrets.ALERT_TO_WHATSAPP }}
-          SENDGRID_API_KEY:     ${{ secrets.SENDGRID_API_KEY }}
-          EMAIL_FROM:           ${{ secrets.EMAIL_FROM }}
-          EMAIL_TO:             ${{ secrets.EMAIL_TO }}
-        run: |
-          sudo apt-get update && sudo apt-get install -y jq >/dev/null
-          V=$(jq -r '.litres // 0' latest.json)
-          echo "Latest litres: $V"
-          if [ "$(printf '%.0f' "$V")" -le "$THRESHOLD_L" ]; then
-            python -m pip install --quiet twilio requests
-            # SMS
-            python - <<'PY'
-import os
-from twilio.rest import Client
-c=Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
-c.messages.create(body=f"Tank low: {os.environ['V']} L",
-                  from_=os.environ["TWILIO_SMS_FROM"],
-                  to=os.environ["ALERT_TO_SMS"])
-PY
-            # (Optional) WhatsApp & Email similar (Twilio WhatsApp / SendGrid)
-          fi
-        shell: bash
+#                 - name: Maybe alert on low tank
+#         if: steps.find.outputs.mf4_key != ''
+#         env:
+#           THRESHOLD_L: "60"   # set as you like
+#           TWILIO_ACCOUNT_SID:   ${{ secrets.TWILIO_ACCOUNT_SID }}
+#           TWILIO_AUTH_TOKEN:    ${{ secrets.TWILIO_AUTH_TOKEN }}
+#           TWILIO_SMS_FROM:      ${{ secrets.TWILIO_SMS_FROM }}
+#           ALERT_TO_SMS:         ${{ secrets.ALERT_TO_SMS }}
+#           TWILIO_WHATSAPP_FROM: ${{ secrets.TWILIO_WHATSAPP_FROM }}
+#           ALERT_TO_WHATSAPP:    ${{ secrets.ALERT_TO_WHATSAPP }}
+#           SENDGRID_API_KEY:     ${{ secrets.SENDGRID_API_KEY }}
+#           EMAIL_FROM:           ${{ secrets.EMAIL_FROM }}
+#           EMAIL_TO:             ${{ secrets.EMAIL_TO }}
+#         run: |
+#           sudo apt-get update && sudo apt-get install -y jq >/dev/null
+#           V=$(jq -r '.litres // 0' latest.json)
+#           echo "Latest litres: $V"
+#           if [ "$(printf '%.0f' "$V")" -le "$THRESHOLD_L" ]; then
+#             python -m pip install --quiet twilio requests
+#             # SMS
+#             python - <<'PY'
+# import os
+# from twilio.rest import Client
+# c=Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
+# c.messages.create(body=f"Tank low: {os.environ['V']} L",
+#                   from_=os.environ["TWILIO_SMS_FROM"],
+#                   to=os.environ["ALERT_TO_SMS"])
+# PY
+#             # (Optional) WhatsApp & Email similar (Twilio WhatsApp / SendGrid)
+#           fi
+#         shell: bash
