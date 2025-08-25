@@ -39,7 +39,7 @@ jobs:
 
       - name: Fetch newest Analog + GNSS and write latest.json
         run: |
-          python test_tank_data_source.py
+          python fetch_latest.py
 
       - name: Commit latest.json (if changed)
         run: |
