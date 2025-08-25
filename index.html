@@ -133,8 +133,12 @@ function updateGauge(litres, capHint) {
 
 let map, curMarker, crumbLine;
 function initMap() {
-  map = L.map('map', { worldCopyJump:true }).setView([-35.13, 139.13], 15);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20, attribution: '© OpenStreetMap' }).addTo(map);
+  map = L.map('map', { worldCopyJump: true }).setView([-35.13, 139.13], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    minZoom: 3,
+    maxZoom: 19,
+    attribution: '© OpenStreetMap'
+  }).addTo(map);
   crumbLine = L.polyline([], { weight: 4, opacity: 0.9 }).addTo(map);
 }
 function updateMap(gpsCurrent, breadcrumbs) {
