@@ -1,9 +1,9 @@
 name: Fetch latest tank + GNSS → latest.json
 
-on:
-  workflow_dispatch: {}
-  schedule:
-    - cron: "*/2 * * * *"  
+# on:
+#   workflow_dispatch: {}
+#   schedule:
+#     - cron: "*/2 * * * *"  
 
 permissions:
   contents: write
