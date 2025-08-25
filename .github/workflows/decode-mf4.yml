@@ -1,9 +1,9 @@
-name: Fetch latest tank + GNSS → latest.json
+name: Fetch latest tank + GNSS -> latest.json
 
-# on:
-#   workflow_dispatch: {}
-#   schedule:
-#     - cron: "*/2 * * * *"  
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "*/10 * * * *"   # every 10 minutes (UTC)
 
 permissions:
   contents: write
@@ -16,9 +16,8 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION:            ${{ secrets.AWS_REGION }}
       S3_BUCKET_PARQUET:     ${{ secrets.S3_BUCKET_PARQUET }}
-      PREFIX:                ${{ secrets.S3_PREFIX }}    
-      GNSS_PREFIX:           ${{ vars.GNSS_PREFIX }}     
-
+      PREFIX:                ${{ secrets.S3_PREFIX }}      # e.g. C4DF4028/CAN1_Analog1To4/
+      GNSS_PREFIX:           ${{ vars.GNSS_PREFIX }}       # optional; script derives if unset
       A1_EMPTY:              ${{ vars.A1_EMPTY }}
       A1_FULL:               ${{ vars.A1_FULL }}
       LITRES_EMPTY:          ${{ vars.LITRES_EMPTY }}
@@ -26,13 +25,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # safer for committing/pushing
 
       - name: Sanity check workspace
         run: |
           echo "workspace: $GITHUB_WORKSPACE"
           ls -la
           test -f scripts/fetch_latest.py || (echo "scripts/fetch_latest.py not found" && exit 1)
-
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -51,7 +51,7 @@ jobs:
         run: |
           if git status --porcelain | grep -q "latest.json"; then
             git config user.name  "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreplygithub.com"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add latest.json
             git commit -m "data: update latest.json"
             git push
