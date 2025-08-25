@@ -27,6 +27,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Sanity check workspace
+        run: |
+          echo "workspace: $GITHUB_WORKSPACE"
+          ls -la
+          test -f scripts/fetch_latest.py || (echo "scripts/fetch_latest.py not found" && exit 1)
+
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -38,8 +45,7 @@ jobs:
           pip install boto3 pandas pyarrow
 
       - name: Fetch newest Analog + GNSS and write latest.json
-        run: |
-          python ../../scripts/fetch_latest.py
+        run: python scripts/fetch_latest.py
 
       - name: Commit latest.json (if changed)
         run: |
