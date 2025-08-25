@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os, sys, io, re, json
 import boto3, pandas as pd
 
@@ -37,7 +38,7 @@ if not analog_obj:
     sys.exit(f"No parquet under s3://{S3_BUCKET_PARQUET}/{PREFIX}")
 analog_key = analog_obj["Key"]
 blob = s3.get_object(Bucket=S3_BUCKET_PARQUET, Key=analog_key)['Body'].read()
-adf = pd.read_parquet(io.BytesIO(blob))  
+adf = pd.read_parquet(io.BytesIO(blob))
 
 ts_col  = col_like(adf, r'(^t$)|(time|timestamp|datetime|ts)')
 lvl_col = col_like(adf, r'(lit(re|er)s?|level|volume|tank|depth|analog\d+)', numeric=True)
@@ -54,8 +55,8 @@ def fenv_float(name, default=None):
     v = os.getenv(name)
     return float(v) if v not in (None, "") else default
 
-A1E = fenv_float("A1_EMPTY")  
-A1F = fenv_float("A1_FULL")     
+A1E = fenv_float("A1_EMPTY")              # raw Analog1 at empty (optional)
+A1F = fenv_float("A1_FULL")               # raw Analog1 at full (optional)
 LE  = fenv_float("LITRES_EMPTY", 0.0)
 LF  = fenv_float("LITRES_FULL",  600.0)
 
@@ -77,6 +78,7 @@ gnss_key = gnss_obj["Key"] if gnss_obj else None
 if gnss_obj:
     gblob = s3.get_object(Bucket=S3_BUCKET_PARQUET, Key=gnss_key)['Body'].read()
     gdf = pd.read_parquet(io.BytesIO(gblob))
+    # Note: lat = latitude, lng = longitude (correct order)
     g_ts  = col_like(gdf, r'(^t$)|(time|timestamp|datetime|ts)')
     g_lat = col_like(gdf, r'\b(lat|latitude)\b',  numeric=True)
     g_lon = col_like(gdf, r'\b(lon|lng|longitude)\b', numeric=True)
@@ -86,8 +88,8 @@ if gnss_obj:
         last = gdf.tail(1).iloc[0]
         try:
             gps_current = {
-                "lat": float(last[g_lat]),
-                "lng": float(last[g_lon]),
+                "lat": float(last[g_lat]),   # latitude
+                "lng": float(last[g_lon]),   # longitude
                 "timestamp": (to_iso(last[g_ts]) if g_ts else None)
             }
         except Exception:
@@ -108,10 +110,15 @@ payload = {
     "timestamp": analog_iso,
     "lat": (gps_current or {}).get("lat"),
     "lng": (gps_current or {}).get("lng"),
-    "gps_current": gps_current,     
-    "breadcrumbs": breadcrumbs,    
+    "gps_current": gps_current,
+    "breadcrumbs": breadcrumbs,
     "s3_key": analog_key,
-    "gnss_key": gnss_key
+    "gnss_key": gnss_key,
+    # ← added calibration fields so the UI can display them
+    "A1_EMPTY": A1E,
+    "A1_FULL": A1F,
+    "LITRES_EMPTY": LE,
+    "LITRES_FULL": LF
 }
 
 with open("latest.json", "w") as f:
